@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="bs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Matura Trener — Matematika</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css" />
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="navbar">
+      <div class="brand">
+        <span class="logo">📐</span>
+        <span>Matura Trener</span>
+      </div>
+      <div class="nav-links" id="nav-links">
+        <button class="nav-link" data-view="home">Početna</button>
+        <button class="nav-link" data-view="exam-intro">Ispit</button>
+        <button class="nav-link" data-view="photo-check">Provjera fotografijom</button>
+        <button class="nav-link" data-view="rewards">Nagrade</button>
+        <button class="nav-link" data-view="history">Historija</button>
+      </div>
+      <div class="nav-right">
+        <div class="streak-chip" id="nav-streak-chip">🔥 0 dana</div>
+        <button class="user-chip nav-link" data-view="profile" id="nav-user-chip" title="Moj profil">
+          <span id="nav-user-avatar">🦊</span>
+          <span id="nav-user-name"></span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- ========== AUTH ========== -->
+    <section class="view" id="view-auth" hidden>
+      <div class="auth-card card">
+        <div class="auth-logo">📐</div>
+        <h2 class="section-title" style="text-align:center;">Matura Trener</h2>
+        <p class="section-sub" style="text-align:center;">Vježbaj matematiku svaki dan i osvoji nagrade.</p>
+
+        <div class="auth-tabs">
+          <button type="button" class="auth-tab active" data-auth-tab="login">Prijava</button>
+          <button type="button" class="auth-tab" data-auth-tab="register">Registracija</button>
+        </div>
+
+        <form id="form-login" class="auth-form" autocomplete="on">
+          <label class="field">
+            <span>Korisničko ime</span>
+            <input name="username" type="text" autocomplete="username" required maxlength="20" />
+          </label>
+          <label class="field">
+            <span>Lozinka</span>
+            <input name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <div class="form-error" role="alert"></div>
+          <button class="btn btn-primary btn-block" type="submit">Prijavi se</button>
+        </form>
+
+        <form id="form-register" class="auth-form" autocomplete="on" hidden>
+          <label class="field">
+            <span>Ime i prezime (ili nadimak)</span>
+            <input name="displayName" type="text" autocomplete="name" required minlength="2" maxlength="30" />
+          </label>
+          <label class="field">
+            <span>Korisničko ime</span>
+            <input name="username" type="text" autocomplete="username" required minlength="3" maxlength="20" pattern="[A-Za-z0-9_.]+" />
+            <small>3–20 znakova: slova, brojevi, tačka ili donja crta</small>
+          </label>
+          <label class="field">
+            <span>Lozinka</span>
+            <input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="128" />
+            <small>Najmanje 8 znakova</small>
+          </label>
+          <label class="field">
+            <span>Ponovi lozinku</span>
+            <input name="password2" type="password" autocomplete="new-password" required minlength="8" maxlength="128" />
+          </label>
+          <div class="form-error" role="alert"></div>
+          <button class="btn btn-primary btn-block" type="submit">Kreiraj račun</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ========== PROFILE ========== -->
+    <section class="view" id="view-profile" hidden>
+      <h2 class="section-title">Moj profil</h2>
+      <p class="section-sub" id="profile-meta"></p>
+
+      <div class="card">
+        <h3 style="margin-bottom:12px;">Podaci</h3>
+        <form id="form-profile" class="auth-form">
+          <div class="field">
+            <span>Avatar</span>
+            <div class="avatar-grid" id="avatar-grid"></div>
+          </div>
+          <label class="field">
+            <span>Korisničko ime</span>
+            <input id="profile-username" type="text" disabled />
+          </label>
+          <label class="field">
+            <span>Ime i prezime (ili nadimak)</span>
+            <input name="displayName" type="text" required minlength="2" maxlength="30" />
+          </label>
+          <div class="form-error" role="alert"></div>
+          <div class="form-ok" role="status"></div>
+          <button class="btn btn-primary" type="submit">Sačuvaj promjene</button>
+        </form>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h3 style="margin-bottom:12px;">Promjena lozinke</h3>
+        <form id="form-password" class="auth-form">
+          <label class="field">
+            <span>Trenutna lozinka</span>
+            <input name="currentPassword" type="password" autocomplete="current-password" required />
+          </label>
+          <label class="field">
+            <span>Nova lozinka</span>
+            <input name="newPassword" type="password" autocomplete="new-password" required minlength="8" maxlength="128" />
+          </label>
+          <label class="field">
+            <span>Ponovi novu lozinku</span>
+            <input name="newPassword2" type="password" autocomplete="new-password" required minlength="8" maxlength="128" />
+          </label>
+          <div class="form-error" role="alert"></div>
+          <div class="form-ok" role="status"></div>
+          <button class="btn btn-primary" type="submit">Promijeni lozinku</button>
+        </form>
+      </div>
+
+      <div class="card danger-zone" style="margin-top:16px;">
+        <h3 style="margin-bottom:6px;">Odjava i brisanje računa</h3>
+        <p class="section-sub" style="margin-bottom:14px;">
+          Brisanjem računa trajno se brišu tvoja historija ispita, niz dana i nagrade.
+        </p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn btn-outline" id="btn-logout" type="button">Odjavi se</button>
+          <button class="btn btn-danger" id="btn-show-delete" type="button">Obriši račun</button>
+        </div>
+        <form id="form-delete" class="auth-form" hidden style="margin-top:14px;">
+          <label class="field">
+            <span>Za potvrdu upiši svoju lozinku</span>
+            <input name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <div class="form-error" role="alert"></div>
+          <button class="btn btn-danger" type="submit">Trajno obriši račun</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ========== HOME ========== -->
+    <section class="view" id="view-home">
+      <div class="hero">
+        <div class="hero-greeting" id="home-greeting"></div>
+        <div class="hero-top">
+          <div>
+            <div style="display:flex;align-items:center;gap:12px;">
+              <span class="streak-flame">🔥</span>
+              <div>
+                <div class="streak-count" id="home-streak-count">0</div>
+                <div class="streak-label">dana zaredom vježbaš</div>
+              </div>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div class="hero-stat">
+              <b id="home-total-bam">0 KM</b>
+              <span>ukupno ušteđeno</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero-stats">
+          <div class="hero-stat"><b id="home-exam-count">0</b><span>odrađenih ispita</span></div>
+          <div class="hero-stat"><b id="home-avg-score">–</b><span>prosječan rezultat</span></div>
+          <div class="hero-stat"><b id="home-longest-streak">0</b><span>najduži niz (dana)</span></div>
+        </div>
+
+        <div class="progress-track">
+          <div class="progress-fill" id="home-progress-fill" style="width:0%"></div>
+        </div>
+        <div class="progress-caption" id="home-progress-caption">
+          Odradi ispit danas da započneš niz!
+        </div>
+      </div>
+
+      <div class="cta-grid">
+        <button class="cta-card" data-view="exam-intro">
+          <span class="cta-icon primary">📝</span>
+          <h3>Započni novi ispit</h3>
+          <p>10 pitanja: 4 osnovna, 3 srednja i 3 napredna — nasumično iz svih 10 oblasti.</p>
+        </button>
+        <button class="cta-card" data-view="photo-check">
+          <span class="cta-icon gold">📷</span>
+          <h3>Provjeri urađen ispit</h3>
+          <p>Riješio si ispit na papiru? Uslikaj ga i samostalno ga provjeri uz naša objašnjenja.</p>
+        </button>
+      </div>
+    </section>
+
+    <!-- ========== EXAM INTRO ========== -->
+    <section class="view" id="view-exam-intro" hidden>
+      <h2 class="section-title">Novi ispit</h2>
+      <p class="section-sub">
+        Ispit ima 10 pitanja i traje 60 minuta, baš kao na pravoj eksternoj maturi. Prva 4 pitanja su
+        osnovnog nivoa (zaokruži odgovor), sljedeća 3 su srednjeg, a posljednja 3 naprednog nivoa
+        (upiši rješenje). Svako pitanje nosi 1 bod — maksimalno 10 bodova.
+      </p>
+      <div class="card">
+        <div class="grid-2">
+          <div>
+            <h3 style="margin-bottom:8px;">📋 Struktura ispita</h3>
+            <p class="section-sub" style="margin-bottom:6px;">4 osnovna + 3 srednja + 3 napredna pitanja</p>
+            <h3 style="margin-bottom:8px;">⏱️ Trajanje</h3>
+            <p class="section-sub" style="margin-bottom:0;">60 minuta (tajmer kreće kad počneš)</p>
+          </div>
+          <div>
+            <h3 style="margin-bottom:8px;">🎯 Bodovanje</h3>
+            <p class="section-sub" style="margin-bottom:6px;">1 bod po pitanju, ukupno 10 bodova</p>
+            <h3 style="margin-bottom:8px;">🔥 Niz dana</h3>
+            <p class="section-sub" style="margin-bottom:0;">Odradi ispit danas da produžiš svoj niz</p>
+          </div>
+        </div>
+        <div style="margin-top:18px;text-align:center;">
+          <button class="btn btn-primary" id="btn-start-exam">Počni ispit 🚀</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== EXAM ========== -->
+    <section class="view" id="view-exam" hidden>
+      <div class="exam-header">
+        <h2 class="section-title" style="margin:0;">Ispit u toku</h2>
+        <div class="timer" id="exam-timer">60:00</div>
+      </div>
+      <div id="exam-questions"></div>
+      <div class="exam-footer">
+        <button class="btn btn-primary" id="btn-submit-exam">Predaj ispit ✅</button>
+      </div>
+    </section>
+
+    <!-- ========== RESULTS ========== -->
+    <section class="view" id="view-results" hidden>
+      <div class="score-hero">
+        <div class="score-circle">
+          <b id="result-score">0/10</b>
+          <span>bodova</span>
+        </div>
+        <h2 id="result-headline">Rezultat ispita</h2>
+      </div>
+      <div id="result-reward-banner"></div>
+      <div id="result-list"></div>
+      <div class="exam-footer">
+        <button class="btn btn-ghost" data-view="home">Nazad na početnu</button>
+      </div>
+    </section>
+
+    <!-- ========== PHOTO CHECK ========== -->
+    <section class="view" id="view-photo-check" hidden>
+      <h2 class="section-title">
+        Provjeri urađen ispit <span class="soon-badge">🤖 AI provjera uskoro</span>
+      </h2>
+      <p class="section-sub">
+        Riješio si ispit na papiru? Generiraj set od 10 pitanja, riješi ih na papiru, uslikaj svoj rad, a
+        onda za svako pitanje sam označi da li si ga tačno riješio. Odmah ćeš dobiti objašnjenje,
+        savjet i asocijaciju za svako pitanje koje ti nije sjelo.
+      </p>
+
+      <div class="card" id="photo-step-1">
+        <h3 style="margin-bottom:10px;">1. Generiraj set pitanja za provjeru</h3>
+        <button class="btn btn-primary" id="btn-generate-photo-set">Generiraj 10 pitanja 🎲</button>
+      </div>
+
+      <div class="card" id="photo-step-2" style="margin-top:16px; display:none;">
+        <h3 style="margin-bottom:10px;">2. Uslikaj ili učitaj svoj papirni ispit (obavezno)</h3>
+        <label class="dropzone" for="photo-input">
+          📷 Klikni da uslikaš ili učitaš fotografiju
+          <input type="file" id="photo-input" accept="image/*" capture="environment" hidden />
+        </label>
+        <img id="photo-preview" class="photo-preview" style="display:none;" />
+      </div>
+
+      <div id="photo-checklist" style="margin-top:16px;"></div>
+
+      <div class="exam-footer" id="photo-submit-wrap" style="display:none;">
+        <button class="btn btn-primary" id="btn-submit-photo-check">Sačuvaj rezultat ✅</button>
+      </div>
+    </section>
+
+    <!-- ========== REWARDS ========== -->
+    <section class="view" id="view-rewards" hidden>
+      <h2 class="section-title">Nagrade i niz dana</h2>
+      <p class="section-sub">
+        Svaka 5 dana zaredom vježbanja otključava novčanu nagradu. Prva nagrada je 10 KM, a svaka
+        sljedeća je veća za 5 KM. Ovo je pratilac napretka — roditelj/staratelj isplaćuje nagradu.
+      </p>
+
+      <div class="grid-2">
+        <div class="stat-box">
+          <b id="rewards-current-streak">0</b>
+          <span>trenutni niz (dana)</span>
+        </div>
+        <div class="stat-box">
+          <b id="rewards-total-bam">0 KM</b>
+          <span>ukupno otključano</span>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h3 style="margin-bottom:10px;">Do sljedeće nagrade</h3>
+        <div class="progress-track" style="background:var(--bg-alt);">
+          <div class="progress-fill" id="rewards-progress-fill" style="width:0%; background: linear-gradient(135deg, var(--primary), var(--primary-2));"></div>
+        </div>
+        <p class="section-sub" id="rewards-progress-caption" style="margin-top:8px; margin-bottom:0;"></p>
+      </div>
+
+      <h3 style="margin:22px 0 4px;">Historija nagrada</h3>
+      <div class="reward-list" id="rewards-list"></div>
+    </section>
+
+    <!-- ========== HISTORY ========== -->
+    <section class="view" id="view-history" hidden>
+      <h2 class="section-title">Historija ispita</h2>
+      <p class="section-sub">Svi tvoji prethodni ispiti, digitalni i oni provjereni uz fotografiju.</p>
+      <div id="history-list"></div>
+    </section>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
