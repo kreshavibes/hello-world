@@ -1,4 +1,4 @@
-import { db } from "./db.js";
+import { db, forUpdate } from "./db.js";
 import { CONFIG } from "./config.js";
 
 const dateFmt = new Intl.DateTimeFormat("en-CA", {
@@ -21,17 +21,16 @@ export function rewardAmount(milestoneIndex) {
 }
 
 /**
- * Bilježi aktivnost (predat ispit) za današnji dan. Poziva se unutar transakcije.
+ * Bilježi aktivnost (predat ispit) za današnji dan. Poziva se UNUTAR transakcije `t`.
  * Vraća listu novootključanih nagrada.
  */
-export function registerActivity(userId) {
+export async function registerActivity(t, userId) {
   const today = todayStr();
-  const u = db
-    .prepare(
-      "SELECT streak_current, streak_longest, last_active_date FROM users WHERE id = ?"
-    )
-    .get(userId);
-
+  const { rows } = await t.exec(
+    `SELECT streak_current, streak_longest, last_active_date FROM users WHERE id = ?${forUpdate}`,
+    [userId]
+  );
+  const u = rows[0];
   if (u.last_active_date === today) return [];
 
   let current;
@@ -43,34 +42,34 @@ export function registerActivity(userId) {
 
   if (current % CONFIG.MILESTONE_DAYS === 0) {
     const amount = rewardAmount(current / CONFIG.MILESTONE_DAYS);
-    const inserted = db
-      .prepare(
-        "INSERT OR IGNORE INTO rewards (user_id, milestone, amount, date) VALUES (?, ?, ?, ?)"
-      )
-      .run(userId, current, amount, today);
+    const inserted = await t.exec(
+      `INSERT INTO rewards (user_id, milestone, amount, date) VALUES (?, ?, ?, ?)
+       ON CONFLICT (user_id, milestone) DO NOTHING`,
+      [userId, current, amount, today]
+    );
     if (inserted.changes > 0) {
-      db.prepare("UPDATE users SET total_rewards_bam = total_rewards_bam + ? WHERE id = ?").run(
+      await t.exec("UPDATE users SET total_rewards_bam = total_rewards_bam + ? WHERE id = ?", [
         amount,
-        userId
-      );
+        userId,
+      ]);
       newlyUnlocked.push({ milestone: current, amount });
     }
   }
 
-  db.prepare(
-    "UPDATE users SET streak_current = ?, streak_longest = ?, last_active_date = ? WHERE id = ?"
-  ).run(current, longest, today, userId);
-
+  await t.exec(
+    "UPDATE users SET streak_current = ?, streak_longest = ?, last_active_date = ? WHERE id = ?",
+    [current, longest, today, userId]
+  );
   return newlyUnlocked;
 }
 
-export function streakSummary(userId) {
-  const u = db
-    .prepare(
-      `SELECT streak_current, streak_longest, last_active_date, total_rewards_bam
-       FROM users WHERE id = ?`
-    )
-    .get(userId);
+export async function streakSummary(userId) {
+  const { rows } = await db.exec(
+    `SELECT streak_current, streak_longest, last_active_date, total_rewards_bam
+     FROM users WHERE id = ?`,
+    [userId]
+  );
+  const u = rows[0];
 
   const today = todayStr();
   const alive = u.last_active_date && daysBetween(u.last_active_date, today) <= 1;
@@ -94,10 +93,10 @@ export function streakSummary(userId) {
   };
 }
 
-export function rewardLog(userId) {
-  return db
-    .prepare(
-      "SELECT milestone, amount, date FROM rewards WHERE user_id = ? ORDER BY milestone DESC"
-    )
-    .all(userId);
+export async function rewardLog(userId) {
+  const { rows } = await db.exec(
+    "SELECT milestone, amount, date FROM rewards WHERE user_id = ? ORDER BY milestone DESC",
+    [userId]
+  );
+  return rows;
 }

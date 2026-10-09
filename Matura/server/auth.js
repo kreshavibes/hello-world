@@ -22,37 +22,6 @@ export async function verifyPassword(password, stored) {
 
 const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 
-export function createSession(res, userId) {
-  const token = randomBytes(32).toString("hex");
-  const maxAgeMs = CONFIG.SESSION_DAYS * 86400000;
-  db.prepare("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)").run(
-    sha256(token),
-    userId,
-    Date.now() + maxAgeMs
-  );
-  res.cookie(COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: CONFIG.COOKIE_SECURE,
-    maxAge: maxAgeMs,
-    path: "/",
-  });
-}
-
-export function destroySession(req, res) {
-  const token = readToken(req);
-  if (token) db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(sha256(token));
-  res.clearCookie(COOKIE, { path: "/" });
-}
-
-export function destroyOtherSessions(req, userId) {
-  const token = readToken(req);
-  db.prepare("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?").run(
-    userId,
-    token ? sha256(token) : ""
-  );
-}
-
 function readToken(req) {
   const header = req.headers.cookie;
   if (!header) return null;
@@ -63,51 +32,87 @@ function readToken(req) {
   return null;
 }
 
-export function requireAuth(req, res, next) {
+export async function createSession(res, userId) {
+  const token = randomBytes(32).toString("hex");
+  const maxAgeMs = CONFIG.SESSION_DAYS * 86400000;
+  await db.exec("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)", [
+    sha256(token),
+    userId,
+    Date.now() + maxAgeMs,
+  ]);
+  res.cookie(COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: CONFIG.COOKIE_SECURE,
+    maxAge: maxAgeMs,
+    path: "/",
+  });
+}
+
+export async function destroySession(req, res) {
   const token = readToken(req);
-  if (token) {
-    const row = db
-      .prepare(
+  if (token) await db.exec("DELETE FROM sessions WHERE token_hash = ?", [sha256(token)]);
+  res.clearCookie(COOKIE, { path: "/" });
+}
+
+export async function destroyOtherSessions(req, userId) {
+  const token = readToken(req);
+  await db.exec("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?", [
+    userId,
+    token ? sha256(token) : "",
+  ]);
+}
+
+export async function requireAuth(req, res, next) {
+  try {
+    const token = readToken(req);
+    if (token) {
+      const { rows } = await db.exec(
         `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
-         WHERE s.token_hash = ? AND s.expires_at > ?`
-      )
-      .get(sha256(token), Date.now());
-    if (row) {
-      req.user = row;
-      return next();
+         WHERE s.token_hash = ? AND s.expires_at > ?`,
+        [sha256(token), Date.now()]
+      );
+      if (rows[0]) {
+        req.user = rows[0];
+        return next();
+      }
     }
+    res.status(401).json({ error: "Prijavi se da nastaviš." });
+  } catch (e) {
+    next(e);
   }
-  res.status(401).json({ error: "Prijavi se da nastaviš." });
 }
 
-export function purgeExpiredSessions() {
-  db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(Date.now());
+export async function purgeExpired() {
+  await db.exec("DELETE FROM sessions WHERE expires_at <= ?", [Date.now()]);
+  await db.exec("DELETE FROM rate_limits WHERE first_at <= ?", [Date.now() - WINDOW_MS]);
 }
 
-// Jednostavno ograničenje pokušaja prijave (u memoriji) po IP adresi + korisničkom imenu.
-const attempts = new Map();
+// Ograničenje pokušaja čuva se u bazi (radi i kada je server "serverless" sa više instanci).
 const WINDOW_MS = 15 * 60 * 1000;
-const MAX_FAILS = 8;
+const DEFAULT_MAX = 8;
 
-export function loginRateLimited(key, max = MAX_FAILS) {
-  const entry = attempts.get(key);
-  if (!entry) return false;
-  if (Date.now() - entry.first > WINDOW_MS) {
-    attempts.delete(key);
-    return false;
-  }
-  return entry.fails >= max;
+export async function rateLimited(key, max = DEFAULT_MAX) {
+  const { rows } = await db.exec("SELECT fails, first_at FROM rate_limits WHERE key = ?", [key]);
+  const row = rows[0];
+  if (!row || Date.now() - row.first_at > WINDOW_MS) return false;
+  return row.fails >= max;
 }
 
-export function recordLoginFailure(key) {
-  const entry = attempts.get(key);
-  if (!entry || Date.now() - entry.first > WINDOW_MS) {
-    attempts.set(key, { first: Date.now(), fails: 1 });
+export async function recordFailure(key) {
+  const now = Date.now();
+  const { rows } = await db.exec("SELECT first_at FROM rate_limits WHERE key = ?", [key]);
+  if (!rows[0] || now - rows[0].first_at > WINDOW_MS) {
+    await db.exec(
+      `INSERT INTO rate_limits (key, fails, first_at) VALUES (?, 1, ?)
+       ON CONFLICT (key) DO UPDATE SET fails = 1, first_at = excluded.first_at`,
+      [key, now]
+    );
   } else {
-    entry.fails += 1;
+    await db.exec("UPDATE rate_limits SET fails = fails + 1 WHERE key = ?", [key]);
   }
 }
 
-export function clearLoginFailures(key) {
-  attempts.delete(key);
+export async function clearFailures(key) {
+  await db.exec("DELETE FROM rate_limits WHERE key = ?", [key]);
 }

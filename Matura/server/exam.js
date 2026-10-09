@@ -1,4 +1,4 @@
-import { db, transaction } from "./db.js";
+import { db } from "./db.js";
 import { CONFIG } from "./config.js";
 import { QUESTIONS, TOPICS } from "./data/questions.js";
 import { registerActivity, todayStr } from "./streak.js";
@@ -46,15 +46,16 @@ function pickForLevel(level, count, excludeIds) {
   return chosen;
 }
 
-function recentQuestionIds(userId) {
-  const rows = db
-    .prepare("SELECT question_ids FROM exams WHERE user_id = ? ORDER BY id DESC LIMIT ?")
-    .all(userId, CONFIG.RECENT_EXAMS_EXCLUDED);
+async function recentQuestionIds(userId) {
+  const { rows } = await db.exec(
+    "SELECT question_ids FROM exams WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+    [userId, CONFIG.RECENT_EXAMS_EXCLUDED]
+  );
   return new Set(rows.flatMap((r) => JSON.parse(r.question_ids)));
 }
 
-function generateQuestions(userId) {
-  const exclude = recentQuestionIds(userId);
+async function generateQuestions(userId) {
+  const exclude = await recentQuestionIds(userId);
   return [
     ...pickForLevel("basic", COUNTS.basic, exclude),
     ...pickForLevel("medium", COUNTS.medium, exclude),
@@ -126,50 +127,52 @@ function resultItem(q, correct, studentAnswerText) {
   return item;
 }
 
-function loadOwnedExam(userId, examId, mode) {
-  const exam = db.prepare("SELECT * FROM exams WHERE id = ? AND user_id = ?").get(examId, userId);
+async function loadOwnedExam(userId, examId, mode) {
+  const { rows } = await db.exec("SELECT * FROM exams WHERE id = ? AND user_id = ?", [examId, userId]);
+  const exam = rows[0];
   if (!exam || exam.mode !== mode) throw new HttpError(404, "Ispit nije pronađen.");
   if (exam.submitted_at) throw new HttpError(409, "Ovaj ispit je već predat.");
   return { exam, questions: JSON.parse(exam.question_ids).map((id) => BY_ID.get(id)) };
 }
 
-export function startDigitalExam(userId) {
-  const questions = generateQuestions(userId);
+export async function startDigitalExam(userId) {
+  const questions = await generateQuestions(userId);
   const startedAt = Date.now();
-  const { lastInsertRowid } = db
-    .prepare("INSERT INTO exams (user_id, mode, question_ids, started_at) VALUES (?, 'digital', ?, ?)")
-    .run(userId, JSON.stringify(questions.map((q) => q.id)), startedAt);
+  const { rows } = await db.exec(
+    "INSERT INTO exams (user_id, mode, question_ids, started_at) VALUES (?, 'digital', ?, ?) RETURNING id",
+    [userId, JSON.stringify(questions.map((q) => q.id)), startedAt]
+  );
   return {
-    examId: Number(lastInsertRowid),
+    examId: Number(rows[0].id),
     startedAt,
     durationSec: CONFIG.EXAM_DURATION_MIN * 60,
     questions: questions.map(publicQuestion),
   };
 }
 
-export function startPhotoSet(userId) {
-  const questions = generateQuestions(userId);
-  const { lastInsertRowid } = db
-    .prepare("INSERT INTO exams (user_id, mode, question_ids, started_at) VALUES (?, 'photo', ?, ?)")
-    .run(userId, JSON.stringify(questions.map((q) => q.id)), Date.now());
-  return { examId: Number(lastInsertRowid), questions: questions.map(answerKeyQuestion) };
+export async function startPhotoSet(userId) {
+  const questions = await generateQuestions(userId);
+  const { rows } = await db.exec(
+    "INSERT INTO exams (user_id, mode, question_ids, started_at) VALUES (?, 'photo', ?, ?) RETURNING id",
+    [userId, JSON.stringify(questions.map((q) => q.id)), Date.now()]
+  );
+  return { examId: Number(rows[0].id), questions: questions.map(answerKeyQuestion) };
 }
 
 function finalize(userId, examId, score, maxScore, photoThumb) {
-  return transaction(() => {
-    const done = db
-      .prepare(
-        `UPDATE exams SET submitted_at = ?, date = ?, score = ?, max_score = ?, photo_thumb = ?
-         WHERE id = ? AND user_id = ? AND submitted_at IS NULL`
-      )
-      .run(Date.now(), todayStr(), score, maxScore, photoThumb, examId, userId);
+  return db.tx(async (t) => {
+    const done = await t.exec(
+      `UPDATE exams SET submitted_at = ?, date = ?, score = ?, max_score = ?, photo_thumb = ?
+       WHERE id = ? AND user_id = ? AND submitted_at IS NULL`,
+      [Date.now(), todayStr(), score, maxScore, photoThumb, examId, userId]
+    );
     if (done.changes === 0) throw new HttpError(409, "Ovaj ispit je već predat.");
-    return registerActivity(userId);
+    return registerActivity(t, userId);
   });
 }
 
-export function submitDigitalExam(userId, examId, rawAnswers) {
-  const { exam, questions } = loadOwnedExam(userId, examId, "digital");
+export async function submitDigitalExam(userId, examId, rawAnswers) {
+  const { exam, questions } = await loadOwnedExam(userId, examId, "digital");
   const limitMs = (CONFIG.EXAM_DURATION_MIN * 60 + CONFIG.EXAM_GRACE_SEC) * 1000;
   if (Date.now() - exam.started_at > limitMs) {
     throw new HttpError(410, "Vrijeme za ovaj ispit je isteklo.");
@@ -196,14 +199,14 @@ export function submitDigitalExam(userId, examId, rawAnswers) {
     return resultItem(q, correct, text);
   });
 
-  const newlyUnlocked = finalize(userId, examId, score, questions.length, null);
+  const newlyUnlocked = await finalize(userId, examId, score, questions.length, null);
   return { score, maxScore: questions.length, items, newlyUnlocked };
 }
 
 const PHOTO_RE = /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/;
 
-export function submitPhotoSet(userId, examId, rawMarks, photo) {
-  const { questions } = loadOwnedExam(userId, examId, "photo");
+export async function submitPhotoSet(userId, examId, rawMarks, photo) {
+  const { questions } = await loadOwnedExam(userId, examId, "photo");
   const marks = rawMarks && typeof rawMarks === "object" ? rawMarks : {};
 
   if (typeof photo !== "string" || photo.length > 400_000 || !PHOTO_RE.test(photo)) {
@@ -222,29 +225,37 @@ export function submitPhotoSet(userId, examId, rawMarks, photo) {
     return resultItem(q, correct, correct ? "samoprovjereno — tačno" : "samoprovjereno — netačno");
   });
 
-  const newlyUnlocked = finalize(userId, examId, score, questions.length, photo);
+  const newlyUnlocked = await finalize(userId, examId, score, questions.length, photo);
   return { score, maxScore: questions.length, items, newlyUnlocked };
 }
 
-export function historyFor(userId) {
-  return db
-    .prepare(
-      `SELECT id, mode, date, score, max_score AS maxScore, photo_thumb AS photoThumb
-       FROM exams WHERE user_id = ? AND submitted_at IS NOT NULL
-       ORDER BY id DESC LIMIT 200`
-    )
-    .all(userId);
+export async function historyFor(userId) {
+  const { rows } = await db.exec(
+    `SELECT id, mode, date, score, max_score, photo_thumb
+     FROM exams WHERE user_id = ? AND submitted_at IS NOT NULL
+     ORDER BY id DESC LIMIT 200`,
+    [userId]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    mode: r.mode,
+    date: r.date,
+    score: r.score,
+    maxScore: r.max_score,
+    photoThumb: r.photo_thumb,
+  }));
 }
 
-export function statsFor(userId) {
-  const row = db
-    .prepare(
-      `SELECT COUNT(*) AS examCount, AVG(score) AS avgScore
-       FROM exams WHERE user_id = ? AND submitted_at IS NOT NULL`
-    )
-    .get(userId);
+export async function statsFor(userId) {
+  const { rows } = await db.exec(
+    `SELECT COUNT(*) AS exam_count, AVG(score) AS avg_score
+     FROM exams WHERE user_id = ? AND submitted_at IS NOT NULL`,
+    [userId]
+  );
+  const row = rows[0];
+  const avg = row.avg_score == null ? null : Number(row.avg_score);
   return {
-    examCount: row.examCount,
-    avgScore: row.avgScore == null ? null : Math.round(row.avgScore * 10) / 10,
+    examCount: Number(row.exam_count),
+    avgScore: avg == null ? null : Math.round(avg * 10) / 10,
   };
 }
